@@ -1,5 +1,5 @@
-import discord
-from discord.ext import commands
+import nextcord
+from nextcord.ext import commands
 import yt_dlp as youtube_dl
 import asyncio
 import os
@@ -16,7 +16,7 @@ from keep_alive import keep_alive
 load_dotenv()
 
 # Bot configuration
-intents = discord.Intents.default()
+intents = nextcord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -46,7 +46,6 @@ class PlatformHandler:
                 track_id = url.split('/track/')[1].split('?')[0]
             else:
                 return None
-            
             return {
                 'platform': 'Spotify',
                 'search_query': None,
@@ -99,7 +98,7 @@ ffmpeg_options = {
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
-class YTDLSource(discord.PCMVolumeTransformer):
+class YTDLSource(nextcord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
         self.data = data
@@ -119,14 +118,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
             return data['entries']
         
         filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        return cls(nextcord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
     
     @classmethod
     async def create_source(cls, data, *, loop=None, stream=False):
         """Create a single source from data dict"""
         loop = loop or asyncio.get_event_loop()
         filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        return cls(nextcord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class MusicQueue:
     def __init__(self):
@@ -187,33 +186,22 @@ async def get_related_song(current_song):
     try:
         if not current_song or not current_song.title:
             return None
-        
-        # Extract keywords from current song title
         title = current_song.title.lower()
-        # Remove common words and get meaningful keywords
         stopwords = ['official', 'video', 'audio', 'lyrics', 'hd', 'hq', 'music', 'song', 'ft', 'feat', 'featuring']
         words = re.findall(r'\b\w+\b', title)
         keywords = [word for word in words if word not in stopwords and len(word) > 2]
-        
         if not keywords:
             return None
-        
-        # Create search query with some keywords
-        search_terms = keywords[:3]  # Use first 3 meaningful words
+        search_terms = keywords[:3]
         search_query = f"ytsearch:{' '.join(search_terms)} music"
-        
-        # Get search results
         data = await asyncio.get_event_loop().run_in_executor(
             None, lambda: ytdl.extract_info(search_query, download=False)
         )
-        
         if 'entries' in data and data['entries']:
-            # Filter out the current song and pick a random related one
             entries = [entry for entry in data['entries'][:10] if entry and entry.get('title') != current_song.title]
             if entries:
                 selected = random.choice(entries)
                 return await YTDLSource.create_source(selected, loop=asyncio.get_event_loop(), stream=True)
-        
         return None
     except Exception as e:
         print(f"Error getting related song: {e}")
@@ -222,14 +210,13 @@ async def get_related_song(current_song):
 @bot.event
 async def on_ready():
     print(f'🎵 {bot.user} (Castling Cassette) has connected to Discord!')
-    await bot.change_presence(activity=discord.Game(name="♛ !help for commands"))
+    await bot.change_presence(activity=nextcord.Game(name="♛ !help for commands"))
 
 @bot.command(name='join', help='Joins a voice channel')
 async def join(ctx):
     if not ctx.message.author.voice:
         await ctx.send("You are not connected to a voice channel!")
         return
-    
     channel = ctx.message.author.voice.channel
     if ctx.voice_client is not None:
         if ctx.voice_client.channel.id == channel.id:
@@ -259,73 +246,55 @@ async def play(ctx, *, url):
         else:
             await ctx.send("You need to be in a voice channel!")
             return
-
     try:
         async with ctx.typing():
             platform_handler = PlatformHandler()
             queue = get_queue(ctx.guild.id)
-            
             if platform_handler.is_spotify_url(url):
-                embed = discord.Embed(
+                embed = nextcord.Embed(
                     title="⚠️ Spotify Support",
                     description="Direct Spotify playback isn't supported due to DRM restrictions.\n"
                                "Please provide the song name instead, and I'll find it on YouTube!",
                     color=0xff6b35
                 )
-                embed.add_field(
-                    name="Tip", 
-                    value="Try: `!play artist - song name` or copy the song title", 
-                    inline=False
-                )
+                embed.add_field(name="Tip", value="Try: `!play artist - song name` or copy the song title", inline=False)
                 await ctx.send(embed=embed)
                 return
-                
             elif platform_handler.is_apple_music_url(url):
-                embed = discord.Embed(
+                embed = nextcord.Embed(
                     title="⚠️ Apple Music Support",
                     description="Direct Apple Music playback isn't supported due to DRM restrictions.\n"
                                "Please provide the song name instead, and I'll find it on YouTube!",
                     color=0xff6b35
                 )
-                embed.add_field(
-                    name="Tip", 
-                    value="Try: `!play artist - song name` or copy the song title", 
-                    inline=False
-                )
+                embed.add_field(name="Tip", value="Try: `!play artist - song name` or copy the song title", inline=False)
                 await ctx.send(embed=embed)
                 return
-                
             elif platform_handler.is_soundcloud_url(url) or platform_handler.is_youtube_url(url) or not url.startswith('http'):
                 result = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
-                
                 if isinstance(result, list):
                     added_count = 0
-                    
                     for entry in result:
                         if entry:
                             player = await YTDLSource.create_source(entry, loop=bot.loop, stream=True)
                             queue.add_song(player)
                             added_count += 1
-                    
                     platform = "SoundCloud" if platform_handler.is_soundcloud_url(url) else "YouTube"
-                    embed = discord.Embed(
+                    embed = nextcord.Embed(
                         title=f"{platform} Playlist Added",
                         description=f"Added **{added_count}** songs to the queue",
                         color=0x00ff00
                     )
                     embed.add_field(name="Songs in queue", value=len(queue.queue), inline=True)
                     await ctx.send(embed=embed)
-                    
                 else:
                     queue.add_song(result)
-                    
                     platform_emoji = "🎵"
                     if platform_handler.is_soundcloud_url(url):
                         platform_emoji = "🔊"
                     elif platform_handler.is_youtube_url(url):
                         platform_emoji = "📺"
-                    
-                    embed = discord.Embed(
+                    embed = nextcord.Embed(
                         title=f"{platform_emoji} Added to Queue",
                         description=f"**{result.title}**",
                         color=0x00ff00
@@ -334,9 +303,8 @@ async def play(ctx, *, url):
                         embed.set_thumbnail(url=result.thumbnail)
                     embed.add_field(name="Position in queue", value=len(queue.queue), inline=True)
                     await ctx.send(embed=embed)
-                
             else:
-                embed = discord.Embed(
+                embed = nextcord.Embed(
                     title="❌ Unsupported Platform",
                     description="This platform is not supported. Try:\n"
                                "• YouTube URLs or search terms\n"
@@ -346,12 +314,10 @@ async def play(ctx, *, url):
                 )
                 await ctx.send(embed=embed)
                 return
-            
             if not ctx.voice_client.is_playing():
                 await play_next(ctx)
-                
     except Exception as e:
-        error_embed = discord.Embed(
+        error_embed = nextcord.Embed(
             title="❌ Error",
             description=f"An error occurred: {str(e)}",
             color=0xff0000
@@ -362,8 +328,6 @@ async def play(ctx, *, url):
 async def play_next(ctx):
     queue = get_queue(ctx.guild.id)
     player = queue.get_next()
-    
-    # NEW: If no song in queue but autoplay is enabled and we have a current song
     if not player and queue.autoplay and queue.current:
         try:
             print("Attempting autoplay...")
@@ -372,7 +336,7 @@ async def play_next(ctx):
             if related_song:
                 player = related_song
                 queue.current = player
-                embed = discord.Embed(
+                embed = nextcord.Embed(
                     title="🎲 Autoplay",
                     description=f"Playing related song: **{player.title}**",
                     color=0x9932cc
@@ -385,7 +349,6 @@ async def play_next(ctx):
                 print("No related song found for autoplay.")
         except Exception as e:
             print(f"Autoplay error: {e}")
-    
     if player and not ctx.voice_client.is_playing():
         def after_playing(error):
             if error:
@@ -397,10 +360,9 @@ async def play_next(ctx):
                     fut.result()
                 except:
                     pass
-        
         ctx.voice_client.play(player, after=after_playing)
         if len(queue.queue) > 0 or not hasattr(ctx, '_autoplay_notified'):
-            embed = discord.Embed(
+            embed = nextcord.Embed(
                 title="♛ Now Playing",
                 description=f"**{player.title}**",
                 color=0x0099ff
@@ -419,7 +381,6 @@ async def play_next(ctx):
 @bot.command(name='autoplay', help='Toggle autoplay on/off')
 async def toggle_autoplay(ctx, setting=None):
     queue = get_queue(ctx.guild.id)
-    
     if setting is None:
         queue.autoplay = not queue.autoplay
     elif setting.lower() in ['on', 'true', '1', 'yes']:
@@ -429,9 +390,8 @@ async def toggle_autoplay(ctx, setting=None):
     else:
         await ctx.send("❌ Use: `!autoplay on` or `!autoplay off`")
         return
-    
     status = "enabled" if queue.autoplay else "disabled"
-    embed = discord.Embed(
+    embed = nextcord.Embed(
         title=f"🎲 Autoplay {status.title()}",
         description=f"Autoplay is now **{status}**",
         color=0x00ff00 if queue.autoplay else 0xff6b35
@@ -482,9 +442,8 @@ async def stop(ctx):
 @bot.command(name='queue', help='Shows the current queue')
 async def show_queue(ctx):
     queue = get_queue(ctx.guild.id)
-    
     if not queue.queue and not queue.current:
-        embed = discord.Embed(
+        embed = nextcord.Embed(
             title="📋 Queue is empty",
             description="Add some songs with `!play <song>`",
             color=0x9932cc
@@ -497,35 +456,28 @@ async def show_queue(ctx):
             )
         await ctx.send(embed=embed)
         return
-    
-    embed = discord.Embed(title="📋 Music Queue", color=0x9932cc)
-    
+    embed = nextcord.Embed(title="📋 Music Queue", color=0x9932cc)
     if queue.current:
         embed.add_field(
             name="♛ Now Playing",
             value=f"**{queue.current.title}**",
             inline=False
         )
-    
     if queue.queue:
         queue_list = []
         for i, song in enumerate(list(queue.queue)[:10], 1):
             queue_list.append(f"{i}. {song.title}")
-        
         embed.add_field(
             name=f"📝 Up Next ({len(queue.queue)} songs)",
             value="\n".join(queue_list),
             inline=False
         )
-        
         if len(queue.queue) > 10:
             embed.add_field(
                 name="",
                 value=f"... and {len(queue.queue) - 10} more songs",
                 inline=False
             )
-    
-    # NEW: Add queue settings display
     settings = []
     if queue.loop:
         settings.append("🔂 Loop Song")
@@ -533,14 +485,12 @@ async def show_queue(ctx):
         settings.append("🔁 Loop Queue")
     if queue.autoplay:
         settings.append("🎲 Autoplay")
-    
     if settings:
         embed.add_field(
             name="⚙️ Settings",
             value=" • ".join(settings),
             inline=False
         )
-    
     await ctx.send(embed=embed)
 
 @bot.command(name='clear', help='Clears the queue')
@@ -576,10 +526,8 @@ async def loop_queue(ctx):
 async def volume(ctx, volume: int):
     if ctx.voice_client is None:
         return await ctx.send("Not connected to a voice channel.")
-    
     if not 0 <= volume <= 100:
         return await ctx.send("Volume must be between 0 and 100")
-    
     ctx.voice_client.source.volume = volume / 100
     await ctx.send(f"🔊 Volume set to {volume}%")
 
@@ -587,19 +535,16 @@ async def volume(ctx, volume: int):
 @bot.command(name='nowplaying', aliases=['np'], help='Shows current song info')
 async def now_playing(ctx):
     queue = get_queue(ctx.guild.id)
-    
     if not queue.current:
         await ctx.send("Nothing is playing!")
         return
-    
-    embed = discord.Embed(
+    embed = nextcord.Embed(
         title="♛ Now Playing",
         description=f"**{queue.current.title}**",
         color=0x0099ff
     )
     if queue.current.thumbnail:
         embed.set_thumbnail(url=queue.current.thumbnail)
-    
     await ctx.send(embed=embed)
 
 @bot.command(name='search', help='Search and play from multiple platforms')
@@ -610,9 +555,7 @@ async def search_play(ctx, platform: str, *, query):
         else:
             await ctx.send("You need to be in a voice channel!")
             return
-    
     platform = platform.lower()
-    
     try:
         async with ctx.typing():
             if platform in ['youtube', 'yt']:
@@ -625,18 +568,15 @@ async def search_play(ctx, platform: str, *, query):
             else:
                 await ctx.send("❌ Supported platforms: youtube, soundcloud, spotify")
                 return
-            
             result = await YTDLSource.from_url(search_query, loop=bot.loop, stream=True)
             queue = get_queue(ctx.guild.id)
             queue.add_song(result)
-            
             platform_emojis = {
                 'youtube': '📺', 'yt': '📺',
                 'soundcloud': '🔊', 'sc': '🔊',
                 'spotify': '🎵', 'sp': '🎵'
             }
-            
-            embed = discord.Embed(
+            embed = nextcord.Embed(
                 title=f"{platform_emojis.get(platform, '🎵')} Found and Added",
                 description=f"**{result.title}**",
                 color=0x00ff00
@@ -645,29 +585,24 @@ async def search_play(ctx, platform: str, *, query):
                 embed.set_thumbnail(url=result.thumbnail)
             embed.add_field(name="Platform", value=platform.title(), inline=True)
             embed.add_field(name="Position in queue", value=len(queue.queue), inline=True)
-            
             await ctx.send(embed=embed)
-            
             if not ctx.voice_client.is_playing():
                 await play_next(ctx)
-                
     except Exception as e:
         await ctx.send(f"❌ Search failed: {str(e)}")
 
 @bot.command(name='platforms', help='Show supported platforms')
 async def show_platforms(ctx):
-    embed = discord.Embed(
+    embed = nextcord.Embed(
         title="🎵 Supported Platforms",
         color=0x9932cc
     )
-    
     embed.add_field(
         name="✅ Direct Playback",
         value="📺 **YouTube** - Full support (URLs, playlists, search)\n"
               "🔊 **SoundCloud** - Full support (URLs, playlists, search)",
         inline=False
     )
-    
     embed.add_field(
         name="⚠️ Search Only (DRM Protected)",
         value="🎵 **Spotify** - Provide song names, I'll find on YouTube\n"
@@ -675,7 +610,6 @@ async def show_platforms(ctx):
               "🎼 **Other platforms** - Provide song names for YouTube search",
         inline=False
     )
-    
     embed.add_field(
         name="💡 Usage Tips",
         value="• Use URLs for direct playback (YouTube/SoundCloud)\n"
@@ -684,7 +618,6 @@ async def show_platforms(ctx):
               "• Or just: `!play artist - song title`",
         inline=False
     )
-    
     embed.set_footer(text="Spotify/Apple Music use DRM protection, so we search YouTube instead!")
     await ctx.send(embed=embed)
 
