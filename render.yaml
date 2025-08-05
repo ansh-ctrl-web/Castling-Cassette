@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: castling-cassette
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: DISCORD_TOKEN
+        fromDatabase:
+          name: castling-cassette-env
+          type: key/value
+          scheme: plain
+    regions:
+      - oregon
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /
+    disk:
+      name: castling-cassette-disk
+      mountPath: /data
+      sizeGB: 1
