@@ -19,3 +19,5 @@ services:
       name: castling-cassette-disk
       mountPath: /data
       sizeGB: 1
+    # Specify Python version to avoid 3.13
+    pythonVersion: "3.12"
