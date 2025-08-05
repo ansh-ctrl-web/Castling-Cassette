@@ -19,5 +19,4 @@ services:
       name: castling-cassette-disk
       mountPath: /data
       sizeGB: 1
-    # Specify Python version to avoid 3.13
-    pythonVersion: "3.12"
+    # Note: pythonVersion: "3.12" was tried but ignored; leaving it out as Render defaults to 3.13
